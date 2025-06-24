@@ -1,0 +1,26 @@
+# Python Cache & Compiled Files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+
+# Virtual Environment
+.venv/
+
+# Jupyter Notebook Checkpoints
+.ipynb_checkpoints/
+
+# IDE Configuration
+.vscode/
+.idea/
+
+# Project-Specific Data, Logs, and Outputs
+comparison_logs/
+comparison_output/
+filter_output/
+legacy/
+single_logs/
+single_output/
+*.xlsx
+*.png
