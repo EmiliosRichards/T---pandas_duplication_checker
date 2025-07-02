@@ -4,46 +4,36 @@ import os
 
 def format_phone_number(phone_str):
     """
-    Adjusts phone numbers to a standard format.
-    Returns None if the number is invalid or cannot be formatted.
+    Adjusts phone numbers to a standard international format.
+    Handles various formats like '0049...', '+49...', '01...', and numbers with spaces.
+    Returns a standardized string (e.g., '+49...') or None if invalid.
     """
     if pd.isna(phone_str):
         return None
     
     s = str(phone_str).strip()
     
-    # Remove all common separators: spaces, hyphens, slashes, parentheses
-    s_cleaned = re.sub(r'[\s\-\/\(\)]+', '', s)
-
-    # Check for obviously non-numeric or too short strings after cleaning
-    if not s_cleaned or not re.match(r'^\+?\d+$', s_cleaned.replace('00', '+', 1)): # Allow leading '00' to become '+'
-        if not re.match(r'^\d+$', s_cleaned): # If not purely digits (after initial check)
-             return None # Likely not a number if it contains non-digits after cleaning and not starting with +
+    # Remove all non-digit characters except for a leading '+'
+    s_cleaned = re.sub(r'[^\d\+]', '', s)
     
-    # Min length check (e.g., country code + few digits)
-    # A very short number like "+491" is unlikely to be valid.
-    # This is a basic check; more sophisticated validation could be added.
-    if len(s_cleaned.replace('00', '', 1).replace('+', '', 1)) < 7: # Arbitrary minimum length for number part
+    # Further cleaning for specific common patterns like leading '00'
+    if s_cleaned.startswith('00'):
+        # Replace '00' with '+'
+        s_cleaned = '+' + s_cleaned[2:]
+    elif s_cleaned.startswith('0'):
+        # Assume it's a local German number and replace leading '0' with '+49'
+        s_cleaned = '+49' + s_cleaned[1:]
+
+    # If after cleaning, it doesn't start with a '+', it might be a direct country code
+    # e.g. 491234567. Add '+' to it.
+    if not s_cleaned.startswith('+'):
+        s_cleaned = '+' + s_cleaned
+
+    # Basic validation: must start with '+' and have a reasonable length
+    if not s_cleaned.startswith('+') or len(s_cleaned) < 9: # e.g. +49123456
         return None
 
-    if s_cleaned.startswith('00'):
-        # Example: "004912345" -> "+4912345"
-        return '+' + s_cleaned[2:]
-    elif s_cleaned.startswith('+'):
-        # Example: "+4912345" -> "+4912345"
-        return s_cleaned
-    elif re.match(r'^(49|43|41)\d+$', s_cleaned): # Known desired country codes without prefix
-        return '+' + s_cleaned
-    elif s_cleaned.startswith('0') and not s_cleaned.startswith('00'):
-        # Assume local German number if it starts with '0' and is not '00'
-        # This is a common convention but might need adjustment for other local formats.
-        # For this task, we are primarily interested in +49, +41, +43 after this stage.
-        return '+49' + s_cleaned[1:] # Default to German for '0' prefix
-    else:
-        # If it doesn't match common international prefixes or local German '0' start,
-        # and it's not already starting with '+', it's hard to determine the country code reliably
-        # or it might be a malformed number.
-        return None # Treat as unformattable/invalid for filtering purposes
+    return s_cleaned
 
 def is_desired_country(phone_number_str):
     """
@@ -61,8 +51,8 @@ def process_and_filter_excel(input_file_path, output_file_path, phone_column_nam
     """
     Reads an Excel file, filters rows based on phone numbers in the specified column,
     and saves the result to a new Excel file.
-    Rows are kept if the phone number is valid and from Germany, Switzerland, or Austria.
-    Rows with invalid/empty numbers or numbers from other countries are removed.
+    Rows are kept if the phone number is from Germany, Switzerland, or Austria.
+    Rows with invalid numbers or numbers from other countries are removed.
     """
     try:
         df = pd.read_excel(input_file_path, dtype={phone_column_name: str})
@@ -115,14 +105,14 @@ def process_and_filter_excel(input_file_path, output_file_path, phone_column_nam
         print(f"Error writing Excel file {output_file_path}: {e}")
 
 if __name__ == "__main__":
-    INPUT_FILE = 'data/unknown_001_KF8K_rbt_apol_20250530.xlsx'
-    OUTPUT_FILE = 'filter_output/unknown_001_KF8K_rbt_apol_20250530_filtered.xlsx'
+    INPUT_FILE = 'data/manuav_001_ER4K_spg_apol_20250702.xlsx'
+    OUTPUT_FILE = 'data/manuav_001_ER4K_spg_apol_20250702_filtered_D_A_CH.xlsx'
     PHONE_COLUMN = 'Number'
 
     print(f"Starting phone number filtering for '{INPUT_FILE}'...")
     print(f"Reading from column: '{PHONE_COLUMN}'")
-    print(f"Filtering for German (+49), Swiss (+41), Austrian (+43) numbers.")
-    print(f"Rows with invalid numbers or numbers from other countries will be removed.")
+    print(f"Keeping only German (+49), Swiss (+41), and Austrian (+43) numbers.")
+    print(f"Rows with invalid or other country numbers will be removed.")
     print(f"Output will be saved to: '{OUTPUT_FILE}'")
     
     process_and_filter_excel(INPUT_FILE, OUTPUT_FILE, PHONE_COLUMN)
