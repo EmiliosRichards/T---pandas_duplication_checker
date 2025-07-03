@@ -5,34 +5,34 @@ import os
 def format_phone_number(phone_str):
     """
     Adjusts phone numbers to a standard international format.
-    Handles various formats like '0049...', '+49...', '01...', and numbers with spaces.
+    Handles various formats and cleans the input string.
+    Also handles numbers read as floats (e.g., '49123456789.0').
     Returns a standardized string (e.g., '+49...') or None if invalid.
     """
     if pd.isna(phone_str):
         return None
     
     s = str(phone_str).strip()
+
+    # If the string ends with '.0', remove it.
+    if s.endswith('.0'):
+        s = s[:-2]
     
     # Remove all non-digit characters except for a leading '+'
     s_cleaned = re.sub(r'[^\d\+]', '', s)
     
-    # Further cleaning for specific common patterns like leading '00'
     if s_cleaned.startswith('00'):
-        # Replace '00' with '+'
         s_cleaned = '+' + s_cleaned[2:]
     elif s_cleaned.startswith('0'):
-        # Assume it's a local German number and replace leading '0' with '+49'
         s_cleaned = '+49' + s_cleaned[1:]
-
-    # If after cleaning, it doesn't start with a '+', it might be a direct country code
-    # e.g. 491234567. Add '+' to it.
+    
     if not s_cleaned.startswith('+'):
         s_cleaned = '+' + s_cleaned
-
-    # Basic validation: must start with '+' and have a reasonable length
-    if not s_cleaned.startswith('+') or len(s_cleaned) < 9: # e.g. +49123456
+        
+    # Basic validation
+    if not s_cleaned.startswith('+') or len(s_cleaned) < 9:
         return None
-
+        
     return s_cleaned
 
 def is_desired_country(phone_number_str):
@@ -69,21 +69,18 @@ def process_and_filter_excel(input_file_path, output_file_path, phone_column_nam
         print(f"Available columns are: {df.columns.tolist()}")
         return
 
-    # Create lists to store indices of rows to keep and remove
-    rows_to_keep_indices = []
-    rows_to_remove_indices = []
+    # Create a new column for formatted phone numbers
+    df['formatted_phone'] = df[phone_column_name].apply(format_phone_number)
 
-    for index, row in df.iterrows():
-        phone_val = row[phone_column_name]
-        formatted_phone = format_phone_number(phone_val)
+    # Create a boolean mask for rows to keep
+    mask_keep = df['formatted_phone'].apply(lambda p: p is not None and is_desired_country(p))
 
-        if formatted_phone and is_desired_country(formatted_phone):
-            rows_to_keep_indices.append(index)
-        else:
-            rows_to_remove_indices.append(index)
-    
-    df_kept = df.loc[rows_to_keep_indices]
-    df_removed = df.loc[rows_to_remove_indices]
+    # Update the original phone column with the formatted number for the rows we are keeping
+    df.loc[mask_keep, phone_column_name] = df.loc[mask_keep, 'formatted_phone']
+
+    # Select the DataFrames for kept and removed rows
+    df_kept = df[mask_keep].drop(columns=['formatted_phone'])
+    df_removed = df[~mask_keep].drop(columns=['formatted_phone'])
 
     def save_df_to_excel(dataframe, file_path):
         """Helper function to save a DataFrame to an Excel file with auto-adjusted columns."""
@@ -118,8 +115,8 @@ def process_and_filter_excel(input_file_path, output_file_path, phone_column_nam
     print(f"Removed rows: {len(df_removed)} (saved to {removed_output_path})")
 
 if __name__ == "__main__":
-    INPUT_FILE = 'data/manuav_001_ER4K_spg_apol_20250702.xlsx'
-    OUTPUT_FILE = 'data/manuav_001_ER4K_spg_apol_20250702_filtered_D_A_CH.xlsx'
+    INPUT_FILE = 'data/manuav_002_ER5K_spg_apol_20250703.xlsx'
+    OUTPUT_FILE = 'data/manuav_002_ER5K_spg_apol_20250703_filtered.xlsx'
     PHONE_COLUMN = 'Number'
 
     print(f"Starting phone number filtering for '{INPUT_FILE}'...")
