@@ -89,8 +89,8 @@ def process_excel(input_file_path, output_file_path, phone_column_name):
 if __name__ == "__main__":
     # --- Configuration ---
     # !!! IMPORTANT: Update these values !!!
-    INPUT_FILE = 'data/A-Liste_001_AS120_ddc_20250530.xlsx'
-    OUTPUT_FILE = 'data/A-Liste_001_AS120_ddc_20250530_formatted.xlsx'
+    INPUT_FILE = r'data/Anna_sent/Adressen B 28.05.25.xlsx'
+    OUTPUT_FILE = r'data/Anna_sent/Adressen_B_f_28.05.25.xlsx'
     PHONE_COLUMN = 'Number'  # Updated based on user input
     # --- End Configuration ---
 

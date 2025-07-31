@@ -4,8 +4,8 @@ from datetime import datetime
 from openpyxl.utils import get_column_letter
 
 # --- Configuration ---
-INPUT_FILE_PATH = r"data\Anna_sent\Kunden wie Medwing 02.06.25.xlsx"  # IMPORTANT: Change this to your input file path
-DEDUPLICATION_COLUMN = "Company Name"  # Column to use for identifying duplicates
+INPUT_FILE_PATH = r"single_output\Adressen B 25.06.25_deduped.xlsx"  # IMPORTANT: Change this to your input file path
+DEDUPLICATION_COLUMN = "URL"  # Column to use for identifying duplicates
 OUTPUT_DIR = "single_output"
 LOG_DIR = "single_logs"
 
