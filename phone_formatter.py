@@ -7,11 +7,16 @@ def format_phone_number(phone_str):
     - Input like "0049 8221 937 130 0" becomes "+4982219371300"
     - Input like "0043 1 503 72 440" becomes "+43150372440"
     Handles potential variations like existing '+' or local numbers (assuming German default for '0' prefix).
+    Also handles numbers read as floats (e.g., '49123456789.0').
     """
     if pd.isna(phone_str):
         return None
     
     s = str(phone_str).strip()
+
+    # If the string ends with '.0', remove it. This handles cases where numbers were read as floats.
+    if s.endswith('.0'):
+        s = s[:-2]
     
     # Remove all common separators: spaces, hyphens, slashes, parentheses
     # This makes subsequent checks easier.
@@ -19,44 +24,36 @@ def format_phone_number(phone_str):
     
     if s_cleaned.startswith('00'):
         # Example: "004912345" -> "+4912345"
-        # Example: "004312345" -> "+4312345"
         return '+' + s_cleaned[2:]
     elif s_cleaned.startswith('+'):
         # Already has a '+', assume it's mostly correct or already formatted.
-        # Example: "+4912345" -> "+4912345"
         return s_cleaned
-    elif re.match(r'^(49|43)\d+$', s_cleaned): # Known country codes from examples (49, 43)
-        # Example: "4912345" -> "+4912345" (if it started without '00' or '+')
+    elif re.match(r'^(49|43|41)\d+$', s_cleaned): # DE, AT, CH country codes
+        # Example: "4912345" -> "+4912345"
         return '+' + s_cleaned
     elif s_cleaned.startswith('0') and not s_cleaned.startswith('00'):
-        # Starts with a single '0', not '00'. Assume local German number.
-        # Example: "01712345" -> "+491712345"
-        # This rule might need adjustment if '0' prefixed numbers can be non-German.
+        # Starts with a single '0', assume local German number.
         return '+49' + s_cleaned[1:]
     else:
-        # Does not match the primary patterns.
-        # Could be an international number from a different country not starting with '00'
-        # or an already correctly formatted number without common prefixes.
-        # Or it could be a malformed number.
-        # Returning the original string (as passed to function) is a safe fallback.
-        # Alternatively, return s_cleaned or log an issue.
-        # print(f"Warning: Number '{str(phone_str)}' (cleaned: '{s_cleaned}') did not match expected patterns. Returning original.")
-        return str(phone_str) # Fallback to the original input string
+        # If it's a long number without a prefix, assume it's a direct number and add '+'
+        if re.match(r'^\d{11,}$', s_cleaned):
+            return '+' + s_cleaned
+        # Fallback for numbers that don't match expected patterns
+        return str(phone_str)
 
 def process_excel(input_file_path, output_file_path, phone_column_name):
     """
     Reads an Excel file, formats phone numbers in a specified column,
     and saves the result to a new Excel file.
     """
-    df = None  # Initialize df
+    df = None
     try:
-        # Ensure the sheet is loaded first, then check columns.
-        # dtype is applied if the column exists.
-        df = pd.read_excel(input_file_path)
+        # Read the Excel file, ensuring the phone number column is treated as a string
+        df = pd.read_excel(input_file_path, dtype={phone_column_name: str})
     except FileNotFoundError:
         print(f"Error: Input file not found at {input_file_path}")
         return
-    except Exception as e: # Catch other potential read errors (e.g. bad file format)
+    except Exception as e:
         print(f"Error reading Excel file {input_file_path}: {e}")
         return
 
@@ -65,19 +62,7 @@ def process_excel(input_file_path, output_file_path, phone_column_name):
         print(f"Available columns are: {df.columns.tolist()}")
         return
     
-    # Now that we know the column exists, we can safely try to read with specific dtype
-    # or convert it. For simplicity, convert after load.
-    try:
-        df[phone_column_name] = df[phone_column_name].astype(str)
-    except Exception as e:
-        print(f"Error converting column '{phone_column_name}' to string: {e}")
-        return
-
-    # Apply the formatting function
-    # Create a new column for formatted numbers to compare, or overwrite existing one
-    # df['formatted_phone'] = df[phone_column_name].apply(format_phone_number)
-    
-    # To overwrite the existing column:
+    # Apply the formatting function to the specified column
     df[phone_column_name] = df[phone_column_name].apply(format_phone_number)
     
     try:
@@ -89,8 +74,8 @@ def process_excel(input_file_path, output_file_path, phone_column_name):
 if __name__ == "__main__":
     # --- Configuration ---
     # !!! IMPORTANT: Update these values !!!
-    INPUT_FILE = r'data/Anna_sent/Adressen B 28.05.25.xlsx'
-    OUTPUT_FILE = r'data/Anna_sent/Adressen_B_f_28.05.25.xlsx'
+    INPUT_FILE = 'data/manuav_002_ER5K_spg_apol_20250703_filtered.xlsx'
+    OUTPUT_FILE = 'data/manuav_002_ER5K_spg_apol_20250703_formatted.xlsx'
     PHONE_COLUMN = 'Number'  # Updated based on user input
     # --- End Configuration ---
 
