@@ -54,19 +54,21 @@ def is_desired_country(phone_number_str):
             phone_number_str.startswith('+41') or \
             phone_number_str.startswith('+43'))
 
-def process_and_filter_excel(input_file_path, output_file_path, phone_column_name):
+def process_and_filter_excel(input_file_path, output_file_path, primary_phone_col, secondary_phone_col):
     """
-    Reads an Excel file, filters rows based on phone numbers in the specified column,
-    and saves the result to a new Excel file.
-    Rows are kept if the phone number is from Germany, Switzerland, or Austria.
-    Rows with invalid numbers or numbers from other countries are removed and
-    saved to a separate file with a '_removed' suffix.
+    Reads an Excel file, filters rows based on phone numbers.
+    If the primary phone number is not in the DACH region, it checks the secondary phone number.
+    If the secondary number is in the DACH region, it replaces the primary number.
     """
     try:
-        # Read the Excel file, converting the phone column to a string representation
-        # of the number to avoid scientific notation issues.
         df = pd.read_excel(input_file_path)
-        df[phone_column_name] = pd.to_numeric(df[phone_column_name], errors='coerce').astype('Int64').astype(str).replace('<NA>', '')
+        # Convert both phone columns to numeric to handle scientific notation, then to string
+        for col in [primary_phone_col, secondary_phone_col]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').astype('Int64').astype(str).replace('<NA>', '')
+            else:
+                print(f"Warning: Column '{col}' not found in the Excel file.")
+                return
     except FileNotFoundError:
         print(f"Error: Input file not found at {input_file_path}")
         return
@@ -74,23 +76,30 @@ def process_and_filter_excel(input_file_path, output_file_path, phone_column_nam
         print(f"Error reading Excel file {input_file_path}: {e}")
         return
 
-    if phone_column_name not in df.columns:
-        print(f"Error: Column '{phone_column_name}' not found in the Excel file '{input_file_path}'.")
-        print(f"Available columns are: {df.columns.tolist()}")
-        return
+    # Format both phone columns
+    df['formatted_primary'] = df[primary_phone_col].apply(format_phone_number)
+    df['formatted_secondary'] = df[secondary_phone_col].apply(format_phone_number)
 
-    # Create a new column for formatted phone numbers
-    df['formatted_phone'] = df[phone_column_name].apply(format_phone_number)
+    # Identify rows to be initially removed
+    rows_to_remove = df[~df['formatted_primary'].apply(lambda p: p is not None and is_desired_country(p))].copy()
 
-    # Create a boolean mask for rows to keep
-    mask_keep = df['formatted_phone'].apply(lambda p: p is not None and is_desired_country(p))
+    for index, row in rows_to_remove.iterrows():
+        secondary_phone = row['formatted_secondary']
+        if secondary_phone and is_desired_country(secondary_phone):
+            # If the secondary phone is valid, update the primary phone number in the original dataframe
+            df.at[index, primary_phone_col] = secondary_phone
+            # Re-format the primary phone number after update
+            df.at[index, 'formatted_primary'] = secondary_phone
 
+    # Re-evaluate the mask for rows to keep after potential updates
+    mask_keep = df['formatted_primary'].apply(lambda p: p is not None and is_desired_country(p))
+    
     # Update the original phone column with the formatted number for the rows we are keeping
-    df.loc[mask_keep, phone_column_name] = df.loc[mask_keep, 'formatted_phone']
+    df.loc[mask_keep, primary_phone_col] = df.loc[mask_keep, 'formatted_primary']
 
     # Select the DataFrames for kept and removed rows
-    df_kept = df[mask_keep].drop(columns=['formatted_phone'])
-    df_removed = df[~mask_keep].drop(columns=['formatted_phone'])
+    df_kept = df[mask_keep].drop(columns=['formatted_primary', 'formatted_secondary'])
+    df_removed = df[~mask_keep].drop(columns=['formatted_primary', 'formatted_secondary'])
 
     def save_df_to_excel(dataframe, file_path):
         """Helper function to save a DataFrame to an Excel file with auto-adjusted columns."""
@@ -127,13 +136,14 @@ def process_and_filter_excel(input_file_path, output_file_path, phone_column_nam
 if __name__ == "__main__":
     INPUT_FILE = 'data/merged_output.xlsx'
     OUTPUT_FILE = 'data/merged_output_filtered.xlsx'
-    PHONE_COLUMN = 'Telefonnummer'
+    PRIMARY_PHONE_COLUMN = 'Telefonnummer'
+    SECONDARY_PHONE_COLUMN = '$phone'
 
     print(f"Starting phone number filtering for '{INPUT_FILE}'...")
-    print(f"Reading from column: '{PHONE_COLUMN}'")
-    print(f"Keeping only German (+49), Swiss (+41), and Austrian (+43) numbers.")
-    print(f"Rows with invalid or other country numbers will be removed.")
+    print(f"Primary phone column: '{PRIMARY_PHONE_COLUMN}'")
+    print(f"Secondary phone column: '{SECONDARY_PHONE_COLUMN}'")
+    print("If primary number is not in DACH region, will check secondary number.")
     print(f"Kept rows will be saved to: '{OUTPUT_FILE}'")
     print("Removed rows will be saved to a separate file with a '_removed' suffix.")
-    
-    process_and_filter_excel(INPUT_FILE, OUTPUT_FILE, PHONE_COLUMN)
+
+    process_and_filter_excel(INPUT_FILE, OUTPUT_FILE, PRIMARY_PHONE_COLUMN, SECONDARY_PHONE_COLUMN)
