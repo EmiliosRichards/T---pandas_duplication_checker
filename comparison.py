@@ -5,8 +5,8 @@ from openpyxl.utils import get_column_letter
 
 # --- Configuration ---
 # IMPORTANT: Change these to your input file paths
-FILE_TO_BE_MODIFIED_PATH = r"single_output\Blister 02.06.25_dd.xlsx"
-FILE_TO_COMPARE_AGAINST_PATH = r"data\Anna_sent\Kunden wie Medwing 02.06.25.xlsx"
+FILE_TO_BE_MODIFIED_PATH = r"single_output\Adressen B 25.06.25_deduped_deduped.xlsx"
+FILE_TO_COMPARE_AGAINST_PATH = r"data\blist_003_AS250_rbotf_20250626.xlsx"
 
 COMPARISON_COLUMN = "URL"  # Column to use for matching
 OUTPUT_DIR = "comparison_output"
