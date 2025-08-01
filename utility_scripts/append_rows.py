@@ -2,8 +2,8 @@ import pandas as pd
 
 # Define file paths
 file_with_extras = 'data/manuav_b_liste_check.xlsx'
-target_file = 'data/merged_output_final.xlsx'
-output_file = 'data/merged_output_with_appended_rows.xlsx'
+target_file = 'data/step2_phone_numbers_updated.xlsx'
+output_file = 'data/step3_rows_appended.xlsx'
 
 try:
     df_extras = pd.read_excel(file_with_extras)

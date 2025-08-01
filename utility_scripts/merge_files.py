@@ -3,25 +3,24 @@ import pandas as pd
 # Define file paths
 file1 = 'data/manuav_b_liste_check_processedfiltered_augmented_20250731_120245.xlsx'
 file2 = 'data/thisonehere.xlsx'
-output_file = 'data/merged_output.xlsx'
+output_file = 'data/step1_sales_pitch_updated.xlsx'
 
 # Read the excel files
 try:
     df1 = pd.read_excel(file1)
     df2 = pd.read_excel(file2)
 
-    # Perform the merge
-    # The 'firma' column from df1 is matched with the 'Company Name' column from df2.
-    # We are adding the 'sales_pitch' column from df2 to df1.
-    merged_df = pd.merge(df1, df2[['Company Name', 'sales_pitch']], left_on='firma', right_on='Company Name', how='left')
+    # Create a dictionary from the source dataframe for mapping
+    # Company Name -> sales_pitch
+    sales_pitch_map = pd.Series(df2.sales_pitch.values, index=df2['Company Name']).to_dict()
 
-    # Drop the extra 'Company Name' column from the merged dataframe
-    merged_df = merged_df.drop(columns=['Company Name'])
+    # Update the 'Sales_Pitch' column in the target dataframe
+    df1['Sales_Pitch'] = df1['firma'].map(sales_pitch_map).fillna(df1['Sales_Pitch'])
 
-    # Save the merged dataframe to a new excel file
-    merged_df.to_excel(output_file, index=False)
+    # Save the updated dataframe to a new excel file
+    df1.to_excel(output_file, index=False)
 
-    print(f"Successfully merged files and saved the output to {output_file}")
+    print(f"Successfully updated sales pitches and saved the output to {output_file}")
 
 except FileNotFoundError as e:
     print(f"Error: {e.filename} not found.")

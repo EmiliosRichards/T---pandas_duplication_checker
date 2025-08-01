@@ -2,7 +2,7 @@ import pandas as pd
 
 # Define file paths
 file_with_extras = 'data/manuav_b_liste_check.xlsx'
-file_to_compare = 'data/merged_output_final.xlsx'
+file_to_compare = 'data/step2_phone_numbers_updated.xlsx'
 
 try:
     df_extras = pd.read_excel(file_with_extras)

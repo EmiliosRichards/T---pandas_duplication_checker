@@ -94,7 +94,7 @@ def process_and_filter_excel(input_file_path, output_file_path, primary_phone_co
     # Re-evaluate the mask for rows to keep after potential updates
     mask_keep = df['formatted_primary'].apply(lambda p: p is not None and is_desired_country(p))
     
-    # Update the original phone column with the formatted number for the rows we are keeping
+    # Update the original phone column with the formatted number for all kept rows
     df.loc[mask_keep, primary_phone_col] = df.loc[mask_keep, 'formatted_primary']
 
     # Select the DataFrames for kept and removed rows
@@ -134,8 +134,8 @@ def process_and_filter_excel(input_file_path, output_file_path, primary_phone_co
     print(f"Removed rows: {len(df_removed)} (saved to {removed_output_path})")
 
 if __name__ == "__main__":
-    INPUT_FILE = 'data/merged_output.xlsx'
-    OUTPUT_FILE = 'data/merged_output_filtered.xlsx'
+    INPUT_FILE = 'data/step3_rows_appended.xlsx'
+    OUTPUT_FILE = 'data/step4_phone_numbers_filtered.xlsx'
     PRIMARY_PHONE_COLUMN = 'Telefonnummer'
     SECONDARY_PHONE_COLUMN = '$phone'
 
