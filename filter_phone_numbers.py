@@ -6,13 +6,20 @@ def format_phone_number(phone_str):
     """
     Adjusts phone numbers to a standard international format.
     Handles various formats and cleans the input string.
-    Also handles numbers read as floats (e.g., '49123456789.0').
+    Also handles numbers read as floats (e.g., '49123456789.0') and scientific notation.
     Returns a standardized string (e.g., '+49...') or None if invalid.
     """
     if pd.isna(phone_str):
         return None
     
     s = str(phone_str).strip()
+
+    # Handle scientific notation
+    if 'E+' in s.upper() or 'E-' in s.upper():
+        try:
+            s = f"{int(float(s))}"
+        except (ValueError, TypeError):
+            pass  # If conversion fails, proceed with the original string
 
     # If the string ends with '.0', remove it.
     if s.endswith('.0'):
@@ -56,7 +63,10 @@ def process_and_filter_excel(input_file_path, output_file_path, phone_column_nam
     saved to a separate file with a '_removed' suffix.
     """
     try:
-        df = pd.read_excel(input_file_path, dtype={phone_column_name: str})
+        # Read the Excel file, converting the phone column to a string representation
+        # of the number to avoid scientific notation issues.
+        df = pd.read_excel(input_file_path)
+        df[phone_column_name] = pd.to_numeric(df[phone_column_name], errors='coerce').astype('Int64').astype(str).replace('<NA>', '')
     except FileNotFoundError:
         print(f"Error: Input file not found at {input_file_path}")
         return
@@ -115,9 +125,9 @@ def process_and_filter_excel(input_file_path, output_file_path, phone_column_nam
     print(f"Removed rows: {len(df_removed)} (saved to {removed_output_path})")
 
 if __name__ == "__main__":
-    INPUT_FILE = 'data/manuav_002_ER5K_spg_apol_20250703.xlsx'
-    OUTPUT_FILE = 'data/manuav_002_ER5K_spg_apol_20250703_filtered.xlsx'
-    PHONE_COLUMN = 'Number'
+    INPUT_FILE = 'data/merged_output.xlsx'
+    OUTPUT_FILE = 'data/merged_output_filtered.xlsx'
+    PHONE_COLUMN = 'Telefonnummer'
 
     print(f"Starting phone number filtering for '{INPUT_FILE}'...")
     print(f"Reading from column: '{PHONE_COLUMN}'")
