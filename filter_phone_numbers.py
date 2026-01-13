@@ -134,8 +134,8 @@ def process_and_filter_excel(input_file_path, output_file_path, primary_phone_co
     print(f"Removed rows: {len(df_removed)} (saved to {removed_output_path})")
 
 if __name__ == "__main__":
-    INPUT_FILE = 'data/step3_rows_appended.xlsx'
-    OUTPUT_FILE = 'data/step4_phone_numbers_filtered.xlsx'
+    INPUT_FILE = 'data/20250408_kevin_monday_morning.xlsx'
+    OUTPUT_FILE = 'data/20250408_kevin_monday_morning_filtered.xlsx'
     PRIMARY_PHONE_COLUMN = 'Telefonnummer'
     SECONDARY_PHONE_COLUMN = '$phone'
 

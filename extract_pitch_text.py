@@ -35,8 +35,8 @@ It can be run with command-line arguments for flexibility or use the default con
 """
 
 # --- Configuration (used if no command-line arguments are provided) ---
-DEFAULT_INPUT_FILE = 'data/final_output.xlsx'
-DEFAULT_OUTPUT_FILE = 'data/final_output_with_pitch_text.xlsx'
+DEFAULT_INPUT_FILE = 'data/20250408_kevin_monday_morning_filtered.xlsx'
+DEFAULT_OUTPUT_FILE = 'data/kevin_monday_morning_with_pitch_text.xlsx'
 DEFAULT_PITCH_COLUMN = 'Sales_Pitch'
 # --- End of Configuration ---
 
@@ -86,8 +86,8 @@ def process_excel_file(file_path, pitch_column, output_path):
         print(f"An error occurred: {e}")
 
 if __name__ == "__main__":
-    INPUT_FILE = 'data/step4_phone_numbers_filtered.xlsx'
-    OUTPUT_FILE = 'data/final_output.xlsx'
+    INPUT_FILE = 'data/20250408_kevin_monday_morning_filtered.xlsx'
+    OUTPUT_FILE = 'data/kevin_monday_morning_with_pitch_text.xlsx'
     PITCH_COLUMN = 'Sales_Pitch'
 
     if len(sys.argv) > 2:
