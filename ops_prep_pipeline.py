@@ -57,6 +57,345 @@ def _write_csv(df: pd.DataFrame, path: str, sep: str) -> None:
     )
 
 
+def _coalesce_column(df: pd.DataFrame, candidates: List[str]) -> pd.Series:
+    """
+    Return the first existing column among candidates, else empty strings.
+    """
+    for c in candidates:
+        if c in df.columns:
+            return df[c].fillna("").astype(str)
+    return pd.Series([""] * len(df), index=df.index)
+
+
+def _split_name(full_name: str) -> Tuple[str, str]:
+    """
+    Split a full name into first/last in a best-effort way.
+    - "Last, First" -> ("First", "Last")
+    - "First Last" -> ("First", "Last")
+    - "Single" -> ("Single", "")
+    """
+    if full_name is None or (isinstance(full_name, float) and pd.isna(full_name)) or pd.isna(full_name):
+        return "", ""
+    s = str(full_name).strip()
+    if not s:
+        return "", ""
+    if "," in s:
+        parts = [p.strip() for p in s.split(",") if p.strip()]
+        if len(parts) >= 2:
+            last = parts[0]
+            first = " ".join(parts[1:]).strip()
+            return first, last
+    parts = [p for p in s.split() if p.strip()]
+    if len(parts) == 1:
+        return parts[0], ""
+    return parts[0], parts[-1]
+
+
+def _strip_apostrophe_phone(s: str) -> str:
+    if s is None or (isinstance(s, float) and pd.isna(s)) or pd.isna(s):
+        return ""
+    t = str(s).strip()
+    if t.startswith("'"):
+        t = t[1:].strip()
+    return t
+
+
+def _merge_short_german_description_if_available(df: pd.DataFrame, base_name: str) -> pd.DataFrame:
+    """
+    Deprecated: we do NOT auto-merge Short German Description by default.
+    Kept for backward compatibility in case you still want to prototype a merge.
+    """
+    if "Short German Description" in df.columns:
+        return df
+
+    candidates = [
+        os.path.join("data", f"{base_name}_WITH_SHORT_GERMAN_DESC_v2.csv"),
+        os.path.join("data", f"{base_name}_WITH_SHORT_GERMAN_DESC.csv"),
+    ]
+    src_path = next((p for p in candidates if os.path.exists(p)), None)
+    if not src_path:
+        return df
+
+    try:
+        src_df, _src_sep = _load_csv(src_path)
+        if "Short German Description" not in src_df.columns:
+            return df
+
+        # Prefer CanonicalEntryURL join; fallback to GivenURL; final fallback to Company+Website
+        left = df.copy()
+        right = src_df.copy()
+
+        if "CanonicalEntryURL" in left.columns and "CanonicalEntryURL" in right.columns:
+            key = "CanonicalEntryURL"
+        elif "GivenURL" in left.columns and "GivenURL" in right.columns:
+            key = "GivenURL"
+        else:
+            # fallback composite key
+            left["_tmp_key"] = _coalesce_column(left, ["Company", "CompanyName"]).str.strip() + "||" + _coalesce_column(left, ["Website", "GivenURL"]).str.strip()
+            right["_tmp_key"] = _coalesce_column(right, ["Company", "CompanyName"]).str.strip() + "||" + _coalesce_column(right, ["Website", "GivenURL"]).str.strip()
+            key = "_tmp_key"
+
+        right = right[[key, "Short German Description"]].drop_duplicates(subset=[key], keep="first")
+        merged = left.merge(right, on=key, how="left")
+        if "_tmp_key" in merged.columns:
+            merged = merged.drop(columns=["_tmp_key"])
+        return merged
+    except Exception:
+        return df
+
+
+def merge_short_german_description(df: pd.DataFrame, src_path: str) -> pd.DataFrame:
+    """
+    One-off helper: merge 'Short German Description' from a separate file into df.
+
+    Join strategy (in order):
+    - CanonicalEntryURL
+    - GivenURL
+    - fallback composite: Company/CompanyName + Website/GivenURL
+    """
+    if not src_path or not os.path.exists(src_path):
+        return df
+
+    try:
+        src_df, _src_sep = _load_csv(src_path)
+    except Exception:
+        return df
+
+    if "Short German Description" not in src_df.columns:
+        return df
+
+    left = df.copy()
+    right = src_df.copy()
+
+    if "CanonicalEntryURL" in left.columns and "CanonicalEntryURL" in right.columns:
+        key = "CanonicalEntryURL"
+    elif "GivenURL" in left.columns and "GivenURL" in right.columns:
+        key = "GivenURL"
+    else:
+        left["_tmp_key"] = _coalesce_column(left, ["Company", "CompanyName", "﻿Company"]).str.strip() + "||" + _coalesce_column(left, ["Website", "GivenURL"]).str.strip()
+        right["_tmp_key"] = _coalesce_column(right, ["Company", "CompanyName", "﻿Company"]).str.strip() + "||" + _coalesce_column(right, ["Website", "GivenURL"]).str.strip()
+        key = "_tmp_key"
+
+    right = right[[key, "Short German Description"]].drop_duplicates(subset=[key], keep="first")
+    merged = left.merge(right, on=key, how="left", suffixes=("", "_from_merge"))
+
+    # If df already had the column (rare), coalesce to keep existing non-empty values
+    if "Short German Description_from_merge" in merged.columns:
+        if "Short German Description" in merged.columns:
+            base_col = merged["Short German Description"].fillna("").astype(str)
+            new_col = merged["Short German Description_from_merge"].fillna("").astype(str)
+            merged["Short German Description"] = base_col.where(base_col.str.strip().ne(""), new_col)
+        else:
+            merged["Short German Description"] = merged["Short German Description_from_merge"]
+        merged = merged.drop(columns=["Short German Description_from_merge"])
+
+    if "_tmp_key" in merged.columns:
+        merged = merged.drop(columns=["_tmp_key"])
+
+    return merged
+
+
+def export_slim(df: pd.DataFrame, base_name: str, merge_short_desc_from: Optional[str] = None) -> pd.DataFrame:
+    """
+    Create a slim version of an ops output (usually *_ops_suggested.csv).
+    Keeps only user-specified columns in the required order and derives backup/additional numbers.
+    """
+    # By default we do NOT auto-merge this column. If you want a one-off prototype, pass --merge-short-desc-from.
+    if merge_short_desc_from:
+        df = merge_short_german_description(df, merge_short_desc_from)
+
+    company = _coalesce_column(df, ["Company", "﻿Company", "CompanyName"])
+
+    # First call person split
+    fc_person = _coalesce_column(df, ["first_call_person_name"])
+    fc_first = []
+    fc_last = []
+    for v in fc_person.tolist():
+        a, b = _split_name(v)
+        fc_first.append(a)
+        fc_last.append(b)
+
+    first_call_number = _coalesce_column(df, ["first_call_number"])
+    first_call_type = _coalesce_column(df, ["first_call_type"])
+
+    # Backup number logic:
+    # - if main line number exists and differs from first_call -> use main line
+    # - else use backup_number_if_mainline_top1
+    main_line = _coalesce_column(df, ["main_line_backup_number"])
+    main_line_type = _coalesce_column(df, ["main_line_backup_type"])
+    main_line_backup = _coalesce_column(df, ["backup_number_if_mainline_top1"])
+    main_line_backup_type = _coalesce_column(df, ["backup_number_type"])
+
+    backup_number = []
+    backup_type = []
+    for fc, ml, ml_t, bk, bk_t in zip(first_call_number.tolist(), main_line.tolist(), main_line_type.tolist(), main_line_backup.tolist(), main_line_backup_type.tolist()):
+        fc_n = _strip_apostrophe_phone(fc)
+        ml_n = _strip_apostrophe_phone(ml)
+        bk_n = _strip_apostrophe_phone(bk)
+        if ml_n and ml_n != fc_n:
+            backup_number.append(ml)
+            backup_type.append(ml_t)
+        elif bk_n and bk_n != fc_n:
+            backup_number.append(bk)
+            backup_type.append(bk_t)
+        else:
+            backup_number.append("")
+            backup_type.append("")
+
+    # Additional numbers: from Top_Number_1..3 excluding first_call and backup and main line,
+    # DACH-only, non-fax, not in SuspectedOtherOrgNumbers.
+    top1 = _coalesce_column(df, ["Top_Number_1"])
+    top2 = _coalesce_column(df, ["Top_Number_2"])
+    top3 = _coalesce_column(df, ["Top_Number_3"])
+    top1_t = _coalesce_column(df, ["Top_Type_1"])
+    top2_t = _coalesce_column(df, ["Top_Type_2"])
+    top3_t = _coalesce_column(df, ["Top_Type_3"])
+
+    add1_num = []
+    add1_type = []
+    add2_num = []
+    add2_type = []
+    add1_first = []
+    add1_last = []
+    add2_first = []
+    add2_last = []
+
+    # Also refine backup_number logic: if main line equals first call, choose next best eligible Top number as backup.
+    backup_number_refined = []
+    backup_type_refined = []
+
+    for row, fc, ml, ml_t, bk, bk_t, a, a_t, b, b_t, c, c_t in zip(
+        df.itertuples(index=False),
+        first_call_number.tolist(),
+        main_line.tolist(),
+        main_line_type.tolist(),
+        backup_number,
+        backup_type,
+        top1.tolist(),
+        top1_t.tolist(),
+        top2.tolist(),
+        top2_t.tolist(),
+        top3.tolist(),
+        top3_t.tolist(),
+    ):
+        # Build per-row metadata lookup to resolve person names for additional numbers
+        # (Uses LLMExtractedNumbers / PersonContacts / BestPersonContact* if present in the row)
+        row_series = pd.Series(row._asdict())
+        meta = _build_number_metadata_lookup(row_series) if "_build_number_metadata_lookup" in globals() else {}
+
+        suspected = set(_parse_number_list_any(row_series.get("SuspectedOtherOrgNumbers")))
+
+        def eligible(num_raw: str, type_raw: str) -> str:
+            n = _normalize_phone(num_raw)
+            if not n:
+                return ""
+            if n in suspected:
+                return ""
+            if _is_fax_type(type_raw):
+                return ""
+            if not _is_dach(n):
+                return ""
+            return n
+
+        fc_n = _strip_apostrophe_phone(fc)
+        ml_n = _strip_apostrophe_phone(ml)
+        bk_n = _strip_apostrophe_phone(bk)
+
+        # Refine backup: if we already chose mainline as backup and it differs, keep it.
+        # If mainline == firstcall, pick next best eligible Top number (excluding firstcall).
+        if ml_n and ml_n != fc_n:
+            backup_number_refined.append(ml)
+            backup_type_refined.append(ml_t)
+        else:
+            # Consider Top numbers in priority order as backup when mainline is first call.
+            cand_backup = ""
+            cand_backup_type = ""
+            for raw_num, raw_type in [(a, a_t), (b, b_t), (c, c_t)]:
+                n = eligible(raw_num, raw_type)
+                if n and n != fc_n:
+                    cand_backup = _text_protect(n)
+                    cand_backup_type = str(raw_type or "")
+                    break
+            if cand_backup:
+                backup_number_refined.append(cand_backup)
+                backup_type_refined.append(cand_backup_type)
+            elif bk_n and bk_n != fc_n:
+                backup_number_refined.append(bk)
+                backup_type_refined.append(bk_t)
+            else:
+                backup_number_refined.append("")
+                backup_type_refined.append("")
+
+        used = set(x for x in [fc_n, ml_n, _strip_apostrophe_phone(backup_number_refined[-1])] if x)
+
+        candidates: List[Tuple[str, str]] = []
+        for raw_num, raw_type in [(a, a_t), (b, b_t), (c, c_t)]:
+            n = eligible(raw_num, raw_type)
+            t = str(raw_type or "").strip()
+            if n and n not in used and all(n != existing_n for existing_n, _ in candidates):
+                candidates.append((n, t))
+
+        def name_for(num: str) -> Tuple[str, str]:
+            info = meta.get(num, {})
+            full = str(info.get("associated_person_name", "") or "").strip()
+            return _split_name(full)
+
+        n1, t1 = candidates[0] if len(candidates) > 0 else ("", "")
+        n2, t2 = candidates[1] if len(candidates) > 1 else ("", "")
+
+        add1_num.append(_text_protect(n1) if n1 else "")
+        add2_num.append(_text_protect(n2) if n2 else "")
+        add1_type.append(t1)
+        add2_type.append(t2)
+
+        f1, l1 = name_for(n1) if n1 else ("", "")
+        f2, l2 = name_for(n2) if n2 else ("", "")
+
+        add1_first.append(f1)
+        add1_last.append(l1)
+        add2_first.append(f2)
+        add2_last.append(l2)
+
+    # Build final ordered dataframe
+    out = pd.DataFrame(
+        {
+            "Company": company,
+            "# Employees": _coalesce_column(df, ["# Employees"]),
+            "Industry": _coalesce_column(df, ["Industry"]),
+            "Website": _coalesce_column(df, ["Website"]),
+            "Company Linkedin Url": _coalesce_column(df, ["Company Linkedin Url"]),
+            "Company Street": _coalesce_column(df, ["Company Street"]),
+            "Company City": _coalesce_column(df, ["Company City"]),
+            "Company State": _coalesce_column(df, ["Company State"]),
+            "Company Country": _coalesce_column(df, ["Company Country"]),
+            "Company Postal Code": _coalesce_column(df, ["Company Postal Code"]),
+            "Company Address": _coalesce_column(df, ["Company Address"]),
+            "model_score": _coalesce_column(df, ["model_score"]),
+            "reasoning": _coalesce_column(df, ["reasoning"]),
+            "first_call_person_first_name": pd.Series(fc_first),
+            "first_call_person_last_name": pd.Series(fc_last),
+            "first_call_number": first_call_number,
+            "first_call_type": first_call_type,
+            "backup_number": pd.Series(backup_number_refined),
+            "backup_number_type": pd.Series(backup_type_refined),
+            "additional_number_1": pd.Series(add1_num),
+            "additional_number_1_type": pd.Series(add1_type),
+            "additional_number_1_first_name": pd.Series(add1_first),
+            "additional_number_1_last_name": pd.Series(add1_last),
+            "additional_number_2": pd.Series(add2_num),
+            "additional_number_2_type": pd.Series(add2_type),
+            "additional_number_2_first_name": pd.Series(add2_first),
+            "additional_number_2_last_name": pd.Series(add2_last),
+            "sales_pitch_excerpt": _coalesce_column(df, ["sales_pitch_excerpt"]),
+            "sales_pitch_lead_count": _coalesce_column(df, ["sales_pitch_lead_count"]),
+            "Short German Description": _coalesce_column(df, ["Short German Description"]),
+            "matched_golden_partner": _coalesce_column(df, ["matched_golden_partner"]),
+            "match_reasoning": _coalesce_column(df, ["match_reasoning"]),
+        }
+    )
+
+    return out
+
 def _stem(path: str) -> str:
     return os.path.splitext(os.path.basename(path))[0]
 
@@ -945,6 +1284,22 @@ def main() -> int:
         help="Final output path. Default: <review>_ops_final.csv",
     )
 
+    slim = sub.add_parser("export-slim", help="Create a slim CSV from an ops suggested/final CSV.")
+    slim.add_argument("--input", required=True, help="Path to *_ops_suggested.csv (or *_ops_final.csv).")
+    slim.add_argument(
+        "--output",
+        default=None,
+        help="Output slim CSV path. Default: <input>_SLIM.csv",
+    )
+    slim.add_argument(
+        "--merge-short-desc-from",
+        default=None,
+        help=(
+            "One-off: merge 'Short German Description' from another CSV by URL/company keys. "
+            "Example: data/input_augmented_5_30_STITCHED2_ops_suggested_WITH_SHORT_GERMAN_DESC_v2.csv"
+        ),
+    )
+
     args = parser.parse_args()
 
     if args.cmd == "generate-review":
@@ -1032,6 +1387,21 @@ def main() -> int:
         print(f"Run folder: {run_dir}")
         print(f"Wrote final: {final_out}")
         print(f"Wrote summary: {summary_path}")
+        return 0
+
+    if args.cmd == "export-slim":
+        in_path = args.input
+        df, _sep = _load_csv(in_path)
+        base = _stem(in_path)
+        base = _strip_suffix(base, ".csv") if base.endswith(".csv") else base
+        # For auto-merge of Short German Description we want base name like "<stem>_ops_suggested"
+        out_df = export_slim(df, base, merge_short_desc_from=args.merge_short_desc_from)
+        out_path = args.output
+        if not out_path:
+            base2, ext = os.path.splitext(in_path)
+            out_path = f"{base2}_SLIM{ext or '.csv'}"
+        _write_csv(out_df, out_path, ",")
+        print(f"Wrote slim: {out_path}")
         return 0
 
     return 1
